@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 # Load dataset
 dataset = pd.read_csv('2019.csv')
@@ -11,131 +12,115 @@ target = "GDP per capita"
 dataset = dataset[columnas_restantes]
 dataset = dataset.astype(np.float32)
 
-# Prepare the data
 X = dataset.drop(columns=target).values
 y = dataset[target].values
 
-print('# of samples:', len(X))
+# Split dataset
+X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.3, random_state=44)
+X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=44)
 
-# Split dataset into training and test sets
-np.random.seed(44)
-indices = np.arange(X.shape[0])
-np.random.shuffle(indices)
+# Add bias term to input features
+X_train = np.c_[np.ones(X_train.shape[0]), X_train]
+X_val = np.c_[np.ones(X_val.shape[0]), X_val]
+X_test = np.c_[np.ones(X_test.shape[0]), X_test]
 
-train_size = int(0.8 * len(indices))
-train_indices, test_indices = indices[:train_size], indices[train_size:]
+# Initialize parameters
+def initialize_parameters(n_features):
+    return np.zeros(n_features)
 
-X_train, X_test = X[train_indices], X[test_indices]
-y_train, y_test = y[train_indices], y[test_indices]
+# Compute the cost function
+def compute_cost(X, y, theta):
+    m = len(y)
+    predictions = X.dot(theta)
+    errors = predictions - y
+    cost = (1 / (2 * m)) * np.sum(errors ** 2)
+    return cost
 
-# Further split training set into training and validation sets
-train_size = int(0.8 * len(train_indices))
-train_indices, val_indices = train_indices[:train_size], train_indices[train_size:]
-X_train, X_val = X[train_indices], X[val_indices]
-y_train, y_val = y[train_indices], y[val_indices]
-
-def train_linear_regression(X_train, y_train, X_val, y_val, epochs=1000, learning_rate=0.01, print_interval=200):
-    # Add intercept term (bias) to the input features
-    X_train_b = np.c_[np.ones((X_train.shape[0], 1)), X_train]
-    X_val_b = np.c_[np.ones((X_val.shape[0], 1)), X_val]
-    m_train, n = X_train_b.shape
+# Perform gradient descent
+def gradient_descent(X, y, theta, learning_rate, num_iterations):
+    m = len(y)
+    cost_history = np.zeros(num_iterations)
     
-    # Initialize parameters
-    theta = np.random.randn(n, 1)
-    y_train = y_train.reshape(-1, 1)
-    y_val = y_val.reshape(-1, 1)
+    for i in range(num_iterations):
+        predictions = X.dot(theta)
+        errors = predictions - y
+        theta -= (learning_rate / m) * X.T.dot(errors)
+        cost_history[i] = compute_cost(X, y, theta)
     
-    # To store the error for plotting
-    train_error_history = []
-    val_error_history = []
-    
-    for epoch in range(epochs):
-        # Compute predictions
-        y_train_pred = X_train_b.dot(theta)
-        y_val_pred = X_val_b.dot(theta)
-        
-        # Compute the error
-        train_error = y_train_pred - y_train
-        val_error = y_val_pred - y_val
-        train_cost = (1 / (2 * m_train)) * np.sum(train_error ** 2)
-        val_cost = (1 / (2 * X_val_b.shape[0])) * np.sum(val_error ** 2)
-        
-        train_error_history.append(train_cost)
-        val_error_history.append(val_cost)
-        
-        # Compute gradients
-        gradients = (1 / m_train) * X_train_b.T.dot(train_error)
-        
-        # Update parameters
-        theta -= learning_rate * gradients
-        
-        if epoch % print_interval == 0:
-            # Print the current values of the parameters and cost
-            w = theta[1:].flatten()  # weights excluding the bias
-            b = theta[0]  # bias
-            print(f'Epoch {epoch}:')
-            print(f'  w: {w}')
-            print(f'  b: {b[0]}')
-            print(f'  Training Loss: {train_cost:.4f}')
-            print(f'  Validation Loss: {val_cost:.4f}')
-    
-    return theta, train_error_history, val_error_history
+    return theta, cost_history
 
-def predict(X, theta):
-    # Add intercept term (bias) to the input features
-    X_b = np.c_[np.ones((X.shape[0], 1)), X]
-    return X_b.dot(theta)
-
-def mean_squared_error(y_true, y_pred):
-    return np.mean((y_true - y_pred) ** 2)
-
-def r2_score(y_true, y_pred):
-    y_mean = np.mean(y_true)
-    total_variance = np.sum((y_true - y_mean) ** 2)
-    residual_variance = np.sum((y_true - y_pred) ** 2)
-    return 1 - (residual_variance / total_variance)
+# Hyperparameters
+learning_rate = 0.01
+num_iterations = 500
 
 # Train the model
-theta, train_error_history, val_error_history = train_linear_regression(X_train, y_train, X_val, y_val, epochs=6000, learning_rate=0.01, print_interval=200)
-
-# Predict on the test set
-y_test_pred = predict(X_test, theta)
+theta = initialize_parameters(X_train.shape[1])
+theta, cost_history_train = gradient_descent(X_train, y_train, theta, learning_rate, num_iterations)
 
 # Evaluate the model
-mse = mean_squared_error(y_test, y_test_pred)
-r2 = r2_score(y_test, y_test_pred)
+def evaluate_model(X, y, theta):
+    predictions = X.dot(theta)
+    errors = predictions - y
+    mse = np.mean(errors ** 2)
+    rmse = np.sqrt(mse)
+    r2 = 1 - np.sum(errors ** 2) / np.sum((y - np.mean(y)) ** 2)
+    return mse, rmse, r2
 
-print(f'Mean Squared Error: {mse:.4f}')
-print(f'R^2 Score: {r2:.4f}')
+# Compute metrics for training, validation, and testing datasets
+mse_train, rmse_train, r2_train = evaluate_model(X_train, y_train, theta)
+mse_val, rmse_val, r2_val = evaluate_model(X_val, y_val, theta)
+mse_test, rmse_test, r2_test = evaluate_model(X_test, y_test, theta)
 
-# Convert y_test and y_test_pred to 1D arrays for plotting
-y_test = y_test.flatten()
-y_test_pred = y_test_pred.flatten()
+print(f'Training MSE: {mse_train:.4f}')
+print(f'Training RMSE: {rmse_train:.4f}')
+print(f'Training R^2: {r2_train:.4f}')
 
-# Plot true vs predicted values
-plt.figure(figsize=(15, 6))
-plt.subplot(1, 3, 1)
-plt.scatter(y_test, y_test_pred)
-plt.xlabel('True Values')
-plt.ylabel('Predicted Values')
-plt.title('True vs Predicted Values')
+print(f'Validation MSE: {mse_val:.4f}')
+print(f'Validation RMSE: {rmse_val:.4f}')
+print(f'Validation R^2: {r2_val:.4f}')
 
-# Plot error over epochs for training and validation
-plt.subplot(1, 3, 2)
-plt.plot(train_error_history, label='Training Error')
-plt.plot(val_error_history, label='Validation Error')
-plt.xlabel('Epoch')
+print(f'Test MSE: {mse_test:.4f}')
+print(f'Test RMSE: {rmse_test:.4f}')
+print(f'Test R^2: {r2_test:.4f}')
+
+# Plot cost history
+plt.figure(figsize=(12, 6))
+plt.plot(cost_history_train, label='Training Cost')
+plt.title('Cost Function vs. Iterations')
+plt.xlabel('Iterations')
 plt.ylabel('Cost')
-plt.title('Error vs. Epochs')
 plt.legend()
-
-# Plot residuals
-residuals = y_test - y_test_pred
-plt.subplot(1, 3, 3)
-plt.scatter(y_test_pred, residuals)
-plt.xlabel('Predicted Values')
-plt.ylabel('Residuals')
-plt.title('Residuals vs Predicted Values')
-
+plt.grid(True)
 plt.tight_layout()
 plt.show()
+
+# Plot actual vs predicted values for the test set
+def plot_actual_vs_predicted(X, y, theta, title):
+    predictions = X.dot(theta)
+    plt.figure(figsize=(8, 6))
+    plt.scatter(y, predictions, color='blue', label='Predictions')
+    plt.plot([min(y), max(y)], [min(y), max(y)], color='red', linestyle='--', label='Ideal fit')
+    plt.title(title)
+    plt.xlabel('Actual Values')
+    plt.ylabel('Predicted Values')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+plot_actual_vs_predicted(X_test, y_test, theta, 'Actual vs Predicted (Test Set)')
+
+# Plot the distribution of residuals (errors)
+def plot_residuals_distribution(X, y, theta):
+    predictions = X.dot(theta)
+    residuals = y - predictions
+    plt.figure(figsize=(8, 6))
+    plt.hist(residuals, bins=20, color='skyblue', edgecolor='black')
+    plt.title('Distribution of Residuals')
+    plt.xlabel('Residuals (Errors)')
+    plt.ylabel('Frequency')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+plot_residuals_distribution(X_test, y_test, theta)
